@@ -8,7 +8,7 @@ Para garantir que o projeto funcione corretamente, siga os passos abaixo para aj
 
 ## 1. Configuração do Banco de Dados
 
-No arquivo `tp1_3.2.py` (e possivelmente no `tp1_3.3.py`), localize o dicionário `config`:
+No arquivo `tp1_3.2.py` e no `tp1_3.3.py`, localize o dicionário `config`:
 
 ```python
 config = { 
