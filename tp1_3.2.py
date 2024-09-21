@@ -315,10 +315,10 @@ config = {
     'user': 'xxxxx',
     'password': 'xxxxxx',
     'host': 'xxxxx',
-    'port': '54xxxxx32'
+    'port': 'xxxxx'
         }
 
-arquivo = open("amazon-meta2.txt", "r", encoding="utf8")
+arquivo = open("amazon-meta.txt", "r", encoding="utf8")
 
 produtos = extrair_itens(arquivo)
 criar_tabelas(config)
