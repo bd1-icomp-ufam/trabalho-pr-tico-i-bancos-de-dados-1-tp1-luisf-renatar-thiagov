@@ -1,7 +1,7 @@
 import psycopg2
 from tqdm import tqdm
 import re
-
+import time
 
 def criar_tabelas(config):
     commands = (
@@ -80,139 +80,109 @@ def extract_category_id(category_str):
     if match:
         return match.group(1) 
     return None 
-def products(produto,config):
-        data_dict = produto
-        itens_nao_vazios = {k: v for k, v in produto.items() if v != []}
-        quantidade_itens = len(itens_nao_vazios)
-        with psycopg2.connect(**config) as conn:
-            with conn.cursor() as cur:  
-                if quantidade_itens == 2:
-                        products_data = list(zip(data_dict['id'], data_dict['asin']))
-                        insert_query = """
-                        INSERT INTO produtos (product_id, asin, title, product_group, salesrank)
-                        VALUES (%s, %s, NULL, NULL, NULL)
-                        ON CONFLICT (product_id) DO NOTHING;
-                        """
-                else:
-                    total_reviews, downloaded_reviews, average_rating = data_dict['reviews']
-                    products_data = list(zip(
-                            data_dict['id'],
-                            data_dict['asin'],
-                            data_dict['title'],
-                            data_dict['group'],
-                            data_dict['salesrank'],
-                            [total_reviews],     
-                            [downloaded_reviews], 
-                            [average_rating]      
-                        ))
-                    insert_query = """
-                        INSERT INTO produtos (product_id, asin, title, product_group, salesrank,review_total,review_downloaded,review_avg)
-                        VALUES (%s, %s, %s, %s, %s, %s,%s,%s)
-                        ON CONFLICT (product_id) DO NOTHING;
-                        """
-                cur.executemany(insert_query, products_data)
-                conn.commit()
+def products(produto, config):
+    products_data = []
+
+    data_dict = produto
+    itens_nao_vazios = {k: v for k, v in data_dict.items() if v != []}
+    quantidade_itens = len(itens_nao_vazios)
+
+    
+    if quantidade_itens == 2:
+        products_data = list(zip(data_dict['id'], data_dict['asin']))
+    else:
+        total_reviews, downloaded_reviews, average_rating = data_dict['reviews']
+        products_data = list(zip(
+            data_dict['id'],
+            data_dict['asin'],
+            data_dict['title'],
+            data_dict['group'],
+            data_dict['salesrank'],
+            [total_reviews],     
+            [downloaded_reviews], 
+            [average_rating]      
+        ))
+
+ 
+    for i in range(len(products_data)):
+        if len(products_data[i]) < 8:
+            products_data[i] += (None,) * (8 - len(products_data[i]))
+
+    return products_data
+
 
 def reviews(produto, config):
-    with psycopg2.connect(**config) as conn:
-        with conn.cursor() as cur:  
-            data_dict = produto
-            review_details_data = []
-            customer_ids = set()  
-            product_id = data_dict['id'][0]  
+    review_details_data = []
+    customer_ids = set()
+    
+    data_dict = produto
+    product_id = data_dict['id'][0]  
 
-            for review in data_dict['reviews_details']:
-                if len(review) == 5: 
-                    review_date, user_id, rating, helpfulness, total_votes = review
-                    review_details_data.append((
-                        product_id, 
-                        review_date, 
-                        user_id, 
-                        rating, 
-                        helpfulness, 
-                        total_votes
-                    ))
-                    customer_ids.add(user_id) 
-            
-           
-            insert_review_query = """
-                INSERT INTO avaliacoes (product_id, review_date, customer_id, rating, votes, helpful)
-                VALUES (%s, %s, %s, %s, %s, %s)
-                ON CONFLICT (product_id, customer_id, review_date) DO NOTHING;
-            """
-            cur.executemany(insert_review_query, review_details_data)
+  
+    for review in data_dict['reviews_details']:
+        if len(review) == 5:
+            review_date, user_id, rating, helpfulness, total_votes = review
+            review_details_data.append((
+                product_id, 
+                review_date, 
+                user_id, 
+                rating, 
+                helpfulness, 
+                total_votes
+            ))
+            customer_ids.add(user_id)
 
-            
-            insert_cliente_query = """
-                INSERT INTO cliente (customer_id)
-                VALUES (%s)
-                ON CONFLICT (customer_id) DO NOTHING;
-            """
-            cur.executemany(insert_cliente_query, [(customer_id,) for customer_id in customer_ids])
-
-def similar(produto,config):
-        with psycopg2.connect(**config) as conn:
-            with conn.cursor() as cur:  
-                data_dict = produto
-                similar_products_data = []
-                for i, similar_asins in enumerate(data_dict['similar']):
-                    if len(similar_asins) > 1 and i < len(data_dict['asin']):
-                        for similar_asin in similar_asins:
-                             similar_products_data.append((data_dict['asin'][i], similar_asin))
+    return review_details_data, customer_ids
 
 
-                insert_query = """
-                    INSERT INTO produtos_similares (product_asin, similar_asin)
-                    VALUES (%s, %s)
-                    ON CONFLICT (product_asin, similar_asin) DO NOTHING;
-                                """
-                cur.executemany(insert_query, similar_products_data)
 
 
-def category(produto,config):
-        with psycopg2.connect(**config) as conn:
-            with conn.cursor() as cur:  
-                data_dict = produto
-                category_data = []
-                for category_list in data_dict['categories']:
-                    for category in category_list:
-                                
-                        category_id = extract_category_id(category)
-                        if category_id:
-                                    
-                            category_name = category.split('[')[0].strip()  
-                            category_data.append((int(category_id), category_name, None))
+def similar(produto, config):
+    similar_products_data = []
+    
+    data_dict = produto
+
+  
+    for i, similar_asins in enumerate(data_dict['similar']):
+        if len(similar_asins) > 1 and i < len(data_dict['asin']):
+            for similar_asin in similar_asins:
+                similar_products_data.append((data_dict['asin'][i], similar_asin))
+
+    return similar_products_data
 
 
-                        
-                insert_query = """
-                        INSERT INTO categoria (category_id, name, parent_id)
-                        VALUES (%s, %s, %s)
-                        ON CONFLICT (category_id) DO NOTHING;
-                        """
-                cur.executemany(insert_query, category_data)
 
-def prodcategory(produto,config):
-        with psycopg2.connect(**config) as conn:
-            with conn.cursor() as cur:  
-                data_dict = produto
-                product_category_data = []
+def category(produto, config):
+    category_data = []
+    
+    data_dict = produto
 
-                      
-                for product_id in data_dict['id']:
-                    for category_list in data_dict['categories']:
-                        for category_str in category_list:
-                                                           
-                            category_id = extract_category_id(category_str)
-                            product_category_data.append((product_id, category_id))
+    
+    for category_list in data_dict['categories']:
+        for category in category_list:
+            category_id = extract_category_id(category)
+            if category_id:
+                category_name = category.split('[')[0].strip()
+                category_data.append((int(category_id), category_name, None))
 
-                    insert_query = """
-                            INSERT INTO produto_categoria (product_id, category_id)
-                            VALUES (%s, %s)
-                            ON CONFLICT (product_id, category_id) DO NOTHING;
-                            """
-                    cur.executemany(insert_query, product_category_data)
-                    product_category_data = []
+    return category_data
+
+
+def prodcategory(produto, config):
+    product_category_data = []
+    
+    data_dict = produto
+
+    
+    for product_id in data_dict['id']:
+        for category_list in data_dict['categories']:
+            for category_str in category_list:
+                category_id = extract_category_id(category_str)
+                if category_id:  
+                    product_category_data.append((product_id, category_id))
+
+    return product_category_data
+
 def extrair_itens(arquivo):
     conteudo = arquivo.readlines()
     id = []
@@ -300,13 +270,140 @@ def extrair_itens(arquivo):
     return produtos
 
 
-def inserir_bd(produtos,config):
+def inserir_bd(produtos, config):
+    all_products_data = []
+    all_similar_products_data = []
+    all_review_details_data = []
+    all_customer_ids = set()
+    all_category_data = []
+    all_product_category_data = []
+
     for produto in tqdm(produtos, desc="Processando produtos"):
-        products(produto,config)
-        reviews(produto,config)
-        similar(produto,config)
-        category(produto,config)
-        prodcategory(produto,config)
+        product_data = products(produto, config)
+        all_products_data.extend(product_data)
+
+        # Coletar produtos similares
+        similar_data = similar(produto, config)
+        all_similar_products_data.extend(similar_data)
+
+        # Coletar detalhes das avaliações e IDs dos clientes
+        review_data, customer_ids = reviews(produto, config)
+        all_review_details_data.extend(review_data)
+        all_customer_ids.update(customer_ids)
+
+        # Coletar categorias
+        category_data = category(produto, config)
+        all_category_data.extend(category_data)
+
+        # Coletar associações entre produtos e categorias
+        product_category_data = prodcategory(produto, config)
+        all_product_category_data.extend(product_category_data)
+
+    
+    insert_query = """
+        INSERT INTO produtos (product_id, asin, title, product_group, salesrank, review_total, review_downloaded, review_avg)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+        ON CONFLICT (product_id) DO NOTHING;
+    """
+
+    insert_similar_query = """
+        INSERT INTO produtos_similares (product_asin, similar_asin)
+        VALUES (%s, %s)
+        ON CONFLICT (product_asin, similar_asin) DO NOTHING;
+    """
+
+    insert_review_query = """
+        INSERT INTO avaliacoes (product_id, review_date, customer_id, rating, votes, helpful)
+        VALUES (%s, %s, %s, %s, %s, %s)
+        ON CONFLICT (product_id, customer_id, review_date) DO NOTHING;
+    """
+
+    insert_cliente_query = """
+        INSERT INTO cliente (customer_id)
+        VALUES (%s)
+        ON CONFLICT (customer_id) DO NOTHING;
+    """
+
+    insert_category_query = """
+        INSERT INTO categoria (category_id, name, parent_id)
+        VALUES (%s, %s, %s)
+        ON CONFLICT (category_id) DO NOTHING;
+    """
+
+    insert_product_category_query = """
+        INSERT INTO produto_categoria (product_id, category_id)
+        VALUES (%s, %s)
+        ON CONFLICT (product_id, category_id) DO NOTHING;
+    """
+    print("INSERINDO OS VALORES NAS TABELAS")
+    with psycopg2.connect(**config) as conn:
+        with conn.cursor() as cur:
+           
+            if all_products_data:
+                start_time = time.time()
+                try:
+                    cur.executemany(insert_query, all_products_data)
+                    elapsed_time = time.time() - start_time
+                    print(f"Inserção de produtos concluída com sucesso em {elapsed_time:.2f} segundos.")
+                except Exception as e:
+                    print(f"Erro ao inserir produtos: {e}")
+
+            
+            if all_similar_products_data:
+                start_time = time.time()
+                try:
+                    cur.executemany(insert_similar_query, all_similar_products_data)
+                    elapsed_time = time.time() - start_time
+                    print(f"Inserção de produtos similares concluída com sucesso em {elapsed_time:.2f} segundos.")
+                except Exception as e:
+                    print(f"Erro ao inserir produtos similares: {e}")
+
+            
+            if all_review_details_data:
+                start_time = time.time()
+                try:
+                    cur.executemany(insert_review_query, all_review_details_data)
+                    elapsed_time = time.time() - start_time
+                    print(f"Inserção de detalhes dos reviews concluída com sucesso em {elapsed_time:.2f} segundos.")
+                except Exception as e:
+                    print(f"Erro ao inserir detalhes dos reviews: {e}")
+
+            
+            if all_customer_ids:
+                start_time = time.time()
+                try:
+                    cur.executemany(insert_cliente_query, [(customer_id,) for customer_id in all_customer_ids])
+                    elapsed_time = time.time() - start_time
+                    print(f"Inserção de dados dos clientes concluída com sucesso em {elapsed_time:.2f} segundos.")
+                except Exception as e:
+                    print(f"Erro ao inserir dados dos clientes: {e}")
+
+            
+            if all_category_data:
+                start_time = time.time()
+                try:
+                    cur.executemany(insert_category_query, all_category_data)
+                    elapsed_time = time.time() - start_time
+                    print(f"Inserção de categorias concluída com sucesso em {elapsed_time:.2f} segundos.")
+                except Exception as e:
+                    print(f"Erro ao inserir categorias: {e}")
+
+            
+            if all_product_category_data:
+                start_time = time.time()
+                try:
+                    cur.executemany(insert_product_category_query, all_product_category_data)
+                    elapsed_time = time.time() - start_time
+                    print(f"Inserção de associações entre produtos e categorias concluída com sucesso em {elapsed_time:.2f} segundos.")
+                except Exception as e:
+                    print(f"Erro ao inserir associações entre produtos e categorias: {e}")
+
+        conn.commit()
+
+
+ 
+
+
 
 
 config = {
@@ -322,6 +419,4 @@ arquivo = open("amazon-meta.txt", "r", encoding="utf8")
 produtos = extrair_itens(arquivo)
 criar_tabelas(config)
 inserir_bd(produtos,config)
-
-
-
+print("FINALIZADO")
