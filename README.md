@@ -21,3 +21,14 @@ config = {
     'host': 'xxxxx', 
     'port': 'xxxxx' 
 }
+```
+Você deve substituir 'xxxxx' com as informações corretas do banco de dados do seu computador, como nome do banco de dados (dbname), nome de usuário (user), senha (password), endereço (host) e porta (port).
+
+### 2. Configuração do arquivo de entrada amazon-meta.txt
+
+Alteração do nome do arquivo: No  `tp1_3.2.py`, existe a linha:
+
+```python
+arquivo = open("amazon-meta2.txt", "r", encoding="utf8")
+```
+Substitua "amazon-meta2.txt" pelo nome do arquivo .txt que você deseja processar para extrair os itens.
